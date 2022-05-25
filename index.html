@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+        <title>Babylon.js sample code</title>
+
+        <!-- Babylon.js -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.2/dat.gui.min.js"></script>
+        <script src="https://assets.babylonjs.com/generated/Assets.js"></script>
+        <script src="https://preview.babylonjs.com/ammo.js"></script>
+        <script src="https://preview.babylonjs.com/cannon.js"></script>
+        <script src="https://preview.babylonjs.com/Oimo.js"></script>
+        <script src="https://preview.babylonjs.com/earcut.min.js"></script>
+        <script src="https://preview.babylonjs.com/babylon.js"></script>
+        <script src="https://preview.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+        <script src="https://preview.babylonjs.com/proceduralTexturesLibrary/babylonjs.proceduralTextures.min.js"></script>
+        <script src="https://preview.babylonjs.com/postProcessesLibrary/babylonjs.postProcess.min.js"></script>
+        <script src="https://preview.babylonjs.com/loaders/babylonjs.loaders.js"></script>
+        <script src="https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
+        <script src="https://preview.babylonjs.com/gui/babylon.gui.min.js"></script>
+        <script src="https://preview.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+
+        <style>
+            html, body {
+                overflow: hidden;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            #renderCanvas {
+                width: 100%;
+                height: 100%;
+                touch-action: none;
+            }
+        </style>
+    </head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+        var canvas = document.getElementById("renderCanvas");
+
+        var startRenderLoop = function (engine, canvas) {
+            engine.runRenderLoop(function () {
+                if (sceneToRender && sceneToRender.activeCamera) {
+                    sceneToRender.render();
+                }
+            });
+        }
+
+        var engine = null;
+        var scene = null;
+        var sceneToRender = null;
+        var createDefaultEngine = function() { return new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true,  disableWebGL2Support: false}); };
+        var createScene = async function () {
+    // Setup basic scene
+    var scene = new BABYLON.Scene(engine);
+    var camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 10, -20));
+    camera.setTarget(BABYLON.Vector3.Zero());
+    camera.attachControl(canvas, true);
+    var light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 1, 0));
+    light.intensity = 0.7;
+
+    // Enable physics
+    scene.enablePhysics(new BABYLON.Vector3(0,-10,0), new BABYLON.AmmoJSPlugin());
+
+    createGrounds(scene);
+
+    scene.registerBeforeRender(beforeRender);
+    scene.onPointerObservable.add(onPointerObservable);
+
+    return scene;
+};
+
+var groundMaterial;
+var groundTexture;
+var pusher;
+var createGrounds = (scene)=>{
+    groundMaterial = new BABYLON.StandardMaterial("groundMat");
+    groundTexture = new BABYLON.Texture("https://raw.githubusercontent.com/wmavis/babylonjs/master/images/box.png");
+    createBox(1, 2, 6, -2.5, 2, 0); // left side
+    createBox(1, 2, 6, 2.5, 2, 0); // right side
+    pusher = createBox(4, 2, 1, 0, 2, 2.5); // back
+    createBox(6, 2, 6, 0, 0, 0); // flat top
+    createBox(12, 2, 12, 0, -2, 0); // flat middle
+    createBox(24, 2, 24, 0, -4, 0); // flat bottom
+}
+
+var boxIndex = 1;
+var createBox = (width, height, depth, x, y, z)=>{
+    var box = BABYLON.MeshBuilder.CreateBox("box" + boxIndex, { width: width, height: height, depth: depth });
+    box.position = new BABYLON.Vector3(x, y, z);
+    box.material = groundMaterial;
+    box.material.diffuseTexture = groundTexture;
+    box.physicsImpostor = new BABYLON.PhysicsImpostor(box, 
+        BABYLON.PhysicsImpostor.BoxImpostor, { mass: 0, friction: 0.5, restitution: 0.7 });
+    boxIndex++;
+    return box;
+}
+
+const spheres = [];
+var createSphere = (x, y, z)=>{
+    var color;
+    switch(Math.floor(4*Math.random()))
+    {
+        case 0:
+            color = "red";
+            break;
+        case 1:
+            color = "green";
+            break;
+        case 2:
+            color = "blue";
+            break;
+        default:
+            color = "yellow";
+            break;
+
+    }
+    const sphere = BABYLON.MeshBuilder.CreateSphere("sphere");
+    sphere.position = new BABYLON.Vector3(x, y, z);
+    sphere.material = new BABYLON.StandardMaterial("sphereMat");
+    sphere.material.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/wmavis/babylonjs/master/images/sphere_" + color + ".png");
+    sphere.physicsImpostor = new BABYLON.PhysicsImpostor(sphere, 
+        BABYLON.PhysicsImpostor.SphereImpostor, { mass: 0.1 });
+    spheres.push(sphere);
+}
+
+const pusherMax = 2.5;
+const pusherMin = 0.5;
+var pusherVelocity = -0.05;
+var frame = 0;
+var beforeRender = () => {
+    pusher.position.z += pusherVelocity;
+    if(pusher.position.z >= pusherMax || pusher.position.z <= pusherMin) {
+        pusherVelocity = -pusherVelocity;
+    }
+    if(frame % 60 == 0) {
+        console.log(frame, engine.getFps().toFixed() + " fps");
+        createSphere(Math.random() - 0.5, 4, Math.random() - 0.5);
+
+        disposeSpheres();
+    }
+    frame++;
+}
+
+var disposeSpheres = () => {
+    for(var i = 0; i < spheres.length; i++) {
+        if(spheres[i].position.y < -10) {
+            spheres[i].dispose();
+            spheres.splice(i, 1);
+
+        }
+    }
+}
+
+var onPointerObservable = (pointerInfo) => {
+    switch (pointerInfo.type) {
+    case BABYLON.PointerEventTypes.POINTERDOWN:
+        console.log("POINTER DOWN");
+        break;
+    case BABYLON.PointerEventTypes.POINTERUP:
+        console.log("POINTER UP");
+        createSphere(Math.random() - 0.5, 4, Math.random() - 0.5);
+        break;
+    case BABYLON.PointerEventTypes.POINTERMOVE:
+        console.log("POINTER MOVE");
+        break;
+    case BABYLON.PointerEventTypes.POINTERWHEEL:
+        console.log("POINTER WHEEL");
+        break;
+    case BABYLON.PointerEventTypes.POINTERPICK:
+        console.log("POINTER PICK");
+        break;
+    case BABYLON.PointerEventTypes.POINTERTAP:
+        console.log("POINTER TAP");
+        break;
+    case BABYLON.PointerEventTypes.POINTERDOUBLETAP:
+        console.log("POINTER DOUBLE-TAP");
+        break;
+    }
+}
+                window.initFunction = async function() {
+                    await Ammo();
+                    
+                    var asyncEngineCreation = async function() {
+                        try {
+                        return createDefaultEngine();
+                        } catch(e) {
+                        console.log("the available createEngine function failed. Creating the default engine instead");
+                        return createDefaultEngine();
+                        }
+                    }
+
+                    window.engine = await asyncEngineCreation();
+        if (!engine) throw 'engine should not be null.';
+        startRenderLoop(engine, canvas);
+        window.scene = createScene();};
+        initFunction().then(() => {scene.then(returnedScene => { sceneToRender = returnedScene; });
+                            
+        });
+
+        // Resize
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+    </script>
+</body>
+</html>
